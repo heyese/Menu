@@ -405,7 +405,7 @@ class GUI2:
                     # Make sure colour of text box reflects that
                     colour_var.set(self.colour_scheme['not-selected'])
                     self.search_entry.button.configure(bg=colour_var.get())
-                    
+
                     # I don't seem to be able to remove individual buttons - just whole frames
                     # Therefore, for each search we remove all buttons and frames and re-populate
                     for button in self.buttons.keys()[:]: del(self.buttons[button])
