@@ -383,13 +383,17 @@ class GUI2:
         # Idea is to turn the search box yellow whilst expression isn't valid
         colour_var = self.search_entry.colour
         if self.search_entry.input.get() == '':
-            # Just display standard root menu if there is no regex:
+            # I want this to be the equivalent of not having done a search -
+            # effectively loading the menu for the first time.
+            # I set the base position and clear the menu.search_dict
             self.menu.position = []
             self.display_buttons(self.menu.position)
         else:
             if event.char != '' or event.keysym == 'BackSpace':
                 try:
                     options_dict = self.menu.search(self.search_entry.input.get())
+                    # The text menu relies on the stored search_dict.  The GUI menu does not.
+                    del(self.menu.search_dict)
                 except:
                     # Likely user has entered a partially complete regex
                     # Let's turn the colour yellow to let them know
@@ -401,11 +405,23 @@ class GUI2:
                     # Make sure colour of text box reflects that
                     colour_var.set(self.colour_scheme['not-selected'])
                     self.search_entry.button.configure(bg=colour_var.get())
-                # I need to add code to display the contents of the options_dict
-                print len(options_dict.items())
-                print '\n\n'
-                if len(options_dict.items()) > 0:
-                    for key, value in options_dict.items(): print key, value
+                    
+                    # I don't seem to be able to remove individual buttons - just whole frames
+                    # Therefore, for each search we remove all buttons and frames and re-populate
+                    for button in self.buttons.keys()[:]: del(self.buttons[button])
+                    for frame in self.button_frames.keys()[:]:
+                        self.button_frames[frame].pack_forget()
+                        del(self.button_frames[frame])
+                    # Recreate the base frame
+                    self.button_frames[()] = tk.Frame(self.button_frame)
+                    self.button_frames[()].pack(side=tk.LEFT,anchor=tk.N)
+
+                        
+                    for menu_level, options in options_dict.items():
+                        for option in options:
+                            button = Button(self.button_frames[()],list(menu_level) + [option],self)
+                            button.pack()
+
         return
 
     def button_press(self,button):
@@ -437,148 +453,6 @@ class GUI2:
 class object:
     def __init__(self):
         pass
-                
-class GUI:
-    def __init__(self, master, menu):
-        # I want a search box and the results of a get_options call
-        self.info = {}  # Not sure what will be put in this dict yet!
-        self.info['menu'] = menu  # Actually, I can usefully store the menu object in there
-        self.info['colour-scheme'] = dict([
-        ('not-selected','white'),
-        ('selected','green'),
-        ('command-initial','yellow'),
-        ('command-final','red'),
-        ('menu-title','white'),
-        ('bad-regex','yellow'),
-        ])
-        self.info['levels'] = {}
-        # Now make the search button.  This will always be on the screen, at the top.
-        self.info['search'] = {}
-        search = self.info['search']
-        search['frame'] = tk.Frame(master)
-        search['frame'].pack(side=tk.TOP,fill=tk.X,expand=tk.YES,anchor=tk.N)
-        # We want a search label ...
-        search['label'] = tk.Button(search['frame'],text='Search',state=tk.DISABLED,disabledforeground='black')
-        search['label'].pack(side=tk.LEFT,fill=tk.BOTH,anchor=tk.N)
-        # And an Entry button for the search text
-        search['var'] = tk.StringVar()  # Variable to keep the contents of the search
-        search['colour'] = tk.StringVar()
-        search['colour'].set('white')
-        search['button'] = tk.Entry(search['frame'],textvariable=search['var'],bg=search['colour'].get(),state=tk.NORMAL,)
-        search['button'].focus_set()
-        # The binding on the line below triggers the search event on each key press
-        search['button'].bind("<KeyRelease>", self.search)     
-        search['button'].pack(side=tk.LEFT,fill=tk.BOTH,expand=tk.YES,anchor=tk.N)
-
-        # The other menu buttons go in the frame below the search box
-        self.info['buttons'] = tk.Frame(master)
-        self.info['buttons'].pack(side=tk.TOP,fill=tk.BOTH,expand=tk.YES)
-        
-        # Display buttons for current position
-        self.display_buttons([])
-    
-    #def display_menu(self, 
-        
-    def search(self,event):
-        # I don't want this function doing a search unless a regular ASCII 
-        # character is pressed (or backspace)
-        # We also don't want it doing a search unless we have a legitimate regex
-        # Idea is to turn the search box yellow whilst expression isn't valid
-        colour_var = self.info['search']['colour']
-        if event.char != '' or event.keysym == 'BackSpace':
-            #print "Current text is %s" % self.info['search']['var'].get()
-            try:
-                options_dict = self.info['menu'].search(self.info['search']['var'].get())
-            except:
-                # Likely user has entered a partially complete regex
-                # Let's turn the colour yellow to let them know
-                colour_var.set(self.info['colour-scheme']['bad-regex'])
-                self.info['search']['button'].configure(bg=colour_var.get())
-            else:
-                # Search ran ok - string must be a valid regex
-                # Let's ensure the colour is white
-                colour_var.set('white')
-                self.info['search']['button'].configure(bg=colour_var.get())
-            # I need to add code to display the contents of the options_dict
-            print len(options_dict.items())
-            print '\n\n'
-            if len(options_dict.items()) > 0:
-                for key, value in options_dict.items(): print key, value
-        return
-    
-    def display_buttons(self,position):
-        # Position is a list defining the current position. eg.
-        # ['level1','level2','level3']
-        menu = self.info['menu']
-        # levels is a dictionary which holds all the information
-        # about what's actually being displayed
-        levels = self.info['levels']
-
-        for index in range(len(position)+1):
-            # Are we currently displaying this level of the menu?
-            # If not, destroy the equivalent level we are displaying
-            # and all sublevels
-            if tuple(position[:index]) not in levels:
-                # remove all entries of levels that have length index and above.
-                for entry in levels.keys():
-                    if len(entry) >= index:
-                        # Stop displaying the level
-                        levels[entry]['frame'].pack_forget()
-                        levels[entry]['frame'].destroy()
-                        # remove the reference
-                        del levels[entry]
-                # Add in new entry to levels
-                levels[tuple(position[:index])] = {}
-                current_level = levels[tuple(position[:index])]
-                current_level['frame'] = tk.Frame(self.info['buttons'])
-                current_level['frame'].pack(side=tk.LEFT,anchor=tk.N)
-                # get the options
-                options_dict=menu.get_options(position[:index])
-                current_level['buttons'] = {}
-                print options_dict.values()
-                #options_dict.values() should be a list of lists, but we only expect one list
-                for option in options_dict.values()[0]:
-                    current_level['buttons'][tuple(option)] = {}
-                    button = current_level['buttons'][tuple(option)]
-                    button['position'] = position[:index] + [option]
-                    button['colour'] = tk.StringVar()
-                    # I want the colour to be red if the button's a command
-                    if menu.categorise(position[:index],option) == 'command':
-                        button['colour'].set('yellow')
-                    else: button['colour'].set('white')
-                    button['button'] = tk.Button(current_level['frame'],bg=button['colour'].get(),text=option,command = partial(self.menu_select,button))
-                    button['button'].pack(side=tk.TOP,fill=tk.X,expand=tk.YES,anchor=tk.N)
-        return
-                    
-    def menu_select(self,button):
-        # Menu button has been pressed
-        # Reset the colour of all grey coloured buttons
-        levels = self.info['levels']
-        for level in levels.keys():
-            for entry in levels[level]['buttons']:
-                colour_var = levels[level]['buttons'][entry]['colour']
-                if colour_var.get() == 'grey':
-                    colour_var.set('not-selected')
-                    levels[level]['buttons'][entry]['button'].configure(bg=colour_var.get())
-        # Set the colour of all relevant sub-buttons to 'selected'
-        '''
-        position = button['position']
-        for index in range(len(position)+1):
-            pos = position[:index]
-            button = position[index]
-            if tuple(pos) in levels:
-                colour_var = levels[tuple(pos)]['buttons'][button]['colour']
-                colour_var.set('grey')
-                levels[tuple(pos)]['buttons'][button]['button'].configure(bg=colour_var.get())
-        '''
-        
-        
-        #button['colour'].set('grey')
-        #button['button'].configure(bg=button['colour'].get())
-        # Display sub-menu
-        # Just got to work out the position of the button that's been pressed
-        self.display_buttons(button['position'])
-        return
         
     
 def run_gui_menu(menu):
