@@ -18,8 +18,8 @@ def parse_args(options):
                         help="Default: menu.cfg", default='menu.cfg')
     parser.add_option("-f", "--functions", metavar="FILE", dest="functions", 
                         help="Default: functions.py", default='menu.functions')
-    parser.add_option("-g", "--gui", dest="gui", default=False, 
-                        action="store_true",help="Text mode. Default: False")                    
+    parser.add_option("-g", "--gui", dest="gui", default=True, 
+                        action="store_true",help="GUI mode. Default: True")                    
     (options, args) = parser.parse_args()
     return (options,args)
 
@@ -223,6 +223,13 @@ class Button:
         self.frame = frame
         self.colour = tk.StringVar()
         self.variable = tk.StringVar()
+        # 'executed' is used for command buttons, and is set to 'yes' when they are pressed
+        # This is because it's useful to reset the appearance of all buttons and then redo the
+        # appearance of the pressed ones as necessary.  command buttons are a bit more tricky,
+        # because if you press them twice you want the command to be executed and the button to then
+        # appear unpressed, which is what this variable helps with.
+        self.executed = tk.StringVar()
+        self.executed.set('no')
         self.position = position
         GUI.buttons[tuple(position)] = self
         self.type = GUI.menu.categorise(self.position[:-1],self.position[-1])
@@ -241,6 +248,7 @@ class Button:
             self.button.bind("<Enter>", partial(GUI.display_command,self,True))
             self.button.bind("<Leave>", partial(GUI.display_command,self,False))
     def reset(self):
+        # Just resetting the appearance)
         self.relief = tk.RAISED
         self.colour.set(self.default_colour)
     def press(self):
@@ -318,11 +326,8 @@ class GUI2:
         # Think I will have to use a different function to display the results of a search.
         # eg. ['level1','level2','level3']
         # First thing is to remove unwanted button frames and their associated buttons
-        frames = self.button_frames.keys()[:]
-        # unless position = [] (ie. someone has just cleared a search), we never want to clear the base frame
-        if position != []: frames.remove(())
-        for frame in frames:
-            if frame != tuple(position[:len(frame)]) or frame == ():
+        for frame in self.button_frames.keys()[:]:
+            if frame != tuple(position[:len(frame)]):
                 # Above if statement means we are talking about a frame we don't want displayed any more
                 # First, remove the stored references to all its buttons
                 for button in self.buttons.keys()[:]:
@@ -342,7 +347,6 @@ class GUI2:
         if () not in self.button_frames:
             self.button_frames[()] = tk.Frame(self.button_frame)
             self.button_frames[()].pack(side=tk.LEFT,anchor=tk.N)
-            print "self.menu.get_options([])[()] is %s" % self.menu.get_options([])[()]
             for option in self.menu.get_options([])[()]:
                 button = Button(self.button_frames[()],[option],self)
                 button.pack()
@@ -354,24 +358,41 @@ class GUI2:
         # create a frame for it, as that would only contain the underlying 'actual-command'
         # (the 'actual command' isn't supposed to be a button - 
         # it's a command that's executed by clicking the parent 'command' button).
-        length = len(position)
-        for button in self.buttons.values():
-            if button.position == position and button.type == 'command': length = length - 1
-        for i in range(length):
+
+        for i in range(len(position)):
             
-            # A new frame for the next lot of buttons if it doesn't already exist
+            # A new frame for the next lot of buttons if it doesn't already exist,
+            # unless it's for a command
+            # (the 'actual command' isn't supposed to be a button - 
+            # it's a command that's executed by clicking the parent 'command' button).
             temp_position = position[:i+1]
             if tuple(temp_position) not in self.button_frames:
-                # We need to create the frame and populate it with buttons
-                self.button_frames[tuple(temp_position)] = tk.Frame(self.button_frame)
-                self.button_frames[tuple(temp_position)].pack(side=tk.LEFT,anchor=tk.N)
-                for option in self.menu.get_options(temp_position)[tuple(temp_position)]:
-                    frame = self.button_frames[tuple(temp_position)]
-                    button = Button(frame,temp_position + [option],self)  # This also puts an entry in self.buttons
-                    button.pack()
+                if self.menu.categorise(temp_position[:-1],temp_position[-1]) != 'command':
+                    # We need to create the frame and populate it with buttons
+                    self.button_frames[tuple(temp_position)] = tk.Frame(self.button_frame)
+                    self.button_frames[tuple(temp_position)].pack(side=tk.LEFT,anchor=tk.N)
+                    for option in self.menu.get_options(temp_position)[tuple(temp_position)]:
+                        frame = self.button_frames[tuple(temp_position)]
+                        button = Button(frame,temp_position + [option],self)  # This also puts an entry in self.buttons
+                        button.pack()
         
         # Colour and set the relief of all the buttons.
+        # Reset appearance of all buttons except the current one
+        for other_button in self.buttons.values(): 
+            other_button.reset()
+        
+        # Now ensure the correct buttons appear pressed
+        # The complication is that when you press a primed command, the command is executed and
+        # the button is then effectively un-pressed, so in this case I don't want to press it again
+        for other_button in self.buttons.values():
+            if tuple(other_button.position) == tuple(position[:len(other_button.position)]):
+                other_button.press()
+                
         for button in self.buttons.values():
+            # If we've just executed a command, un-prime the command (set it back to its default colour)
+            if button.executed.get() == 'yes':
+                button.executed.set('')
+                button.reset()
             button.button.configure(bg=button.colour.get(),relief=button.relief)
 
         return
@@ -399,7 +420,7 @@ class GUI2:
                     # Let's turn the colour yellow to let them know
                     colour_var.set(self.colour_scheme['bad-regex'])
                     self.search_entry.button.configure(bg=colour_var.get())
-                    options_dict = {}  # probably want some kind of loop that keeps trying until it gets a substring that is a legitimate search
+                    options_dict = {}
                 else:
                     # Search ran ok - string must be a valid regex
                     # Make sure colour of text box reflects that
@@ -412,14 +433,14 @@ class GUI2:
                     for frame in self.button_frames.keys()[:]:
                         self.button_frames[frame].pack_forget()
                         del(self.button_frames[frame])
-                    # Recreate the base frame
-                    self.button_frames[()] = tk.Frame(self.button_frame)
-                    self.button_frames[()].pack(side=tk.LEFT,anchor=tk.N)
+                    # Now I create a special 'search' frame
+                    self.button_frames['search'] = tk.Frame(self.button_frame)
+                    self.button_frames['search'].pack(side=tk.LEFT,anchor=tk.N)
 
                         
                     for menu_level, options in options_dict.items():
                         for option in options:
-                            button = Button(self.button_frames[()],list(menu_level) + [option],self)
+                            button = Button(self.button_frames['search'],list(menu_level) + [option],self)
                             button.pack()
 
         return
@@ -428,24 +449,9 @@ class GUI2:
         self.menu.position = button.position
         
         # If button is a primed command, execute the command
-        already_pressed = False
         if button.type == 'command' and button.colour.get() == button.colour_when_pressed:
             self.menu.execute_command(button.actual_command)
-            already_pressed = True
-            
-        # Reset appearance of all buttons except the current one
-        for other_button in self.buttons.values(): 
-            other_button.reset()
-        
-        # Now ensure the correct buttons appear pressed
-        # The complication is that when you press a primed command, the command is executed and
-        # the button is then effectively un-pressed, so in this case I don't want to press it again
-        for other_button in self.buttons.values():
-            if tuple(other_button.position) == tuple(button.position[:len(other_button.position)]):
-                if other_button.position == button.position:
-                    if already_pressed == False:
-                        other_button.press()
-                else: other_button.press()
+            button.executed.set('yes')
 
         self.display_buttons(self.menu.position)
         return
