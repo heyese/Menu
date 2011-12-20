@@ -241,12 +241,13 @@ class Button:
             self.default_colour = GUI.colour_scheme['not-selected']
             self.colour_when_pressed = GUI.colour_scheme['selected']
         self.reset()
-        self.button = tk.Button(frame,bg=self.colour.get(),text=self.position[-1],relief=self.relief,command = partial(GUI.button_press,self))
-        if self.type == 'command':
-            # Also want to make the command_display_frame show underlying 
-            # command when mouse hovers over button
-            self.button.bind("<Enter>", partial(GUI.display_command,self,True))
-            self.button.bind("<Leave>", partial(GUI.display_command,self,False))
+        self.button = tk.Button(frame,bg=self.colour.get(),activebackground=self.colour.get(),text=self.position[-1],relief=self.relief,command = partial(GUI.button_press,self))
+
+        # Also want to make the command_display_frame show underlying command
+        # or menu position (useful when doing a search) when mouse hovers over button
+        self.button.bind("<Enter>", partial(GUI.display_command,self,True))
+        self.button.bind("<Leave>", partial(GUI.display_command,self,False))
+        
     def reset(self):
         # Just resetting the appearance)
         self.relief = tk.RAISED
@@ -255,10 +256,10 @@ class Button:
         self.relief = tk.SUNKEN
         self.colour.set(self.colour_when_pressed)
     def pack(self):
-        self.button.pack(side=tk.TOP,fill=tk.X,expand=tk.YES,anchor=tk.N)
+        self.button.pack(side=tk.TOP,fill=tk.X,anchor=tk.N)
 
                 
-class GUI2:
+class GUI:
     ''' The top line of the GUI will be an inert button labelled 'search' (purely used as a label)
     alongside a text entry box, into which the user can type a regex to pull up the appropriate menu
     buttons as opposed to navigating the menu itself.  Underneath will a field used to display the
@@ -283,18 +284,20 @@ class GUI2:
         # one to display the underlying actual-command whenever the mouse hovers
         # over a command button and one for all the buttons.
         self.search_frame = tk.Frame(self.master)
-        self.search_frame.pack(side=tk.TOP,fill=tk.X,expand=tk.YES,anchor=tk.N)
+        self.search_frame.pack(side=tk.TOP,fill=tk.X,anchor=tk.N)
         self.command_display_frame = tk.Frame(self.master)
-        self.command_display_frame.pack(side=tk.TOP,fill=tk.X,expand=tk.YES,anchor=tk.N)
+        self.command_display_frame.pack(side=tk.TOP,fill=tk.X,anchor=tk.N)
         self.command_display_contents = tk.StringVar()
-        self.command_display_button = tk.Entry(self.command_display_frame,textvariable = self.command_display_contents,width=len(self.command_display_contents.get()),state=tk.DISABLED,)
-        self.command_display_button.pack(side=tk.TOP,fill=tk.X,expand=tk.YES,anchor=tk.N)
+        self.command_display_button = tk.Entry(self.command_display_frame,textvariable = self.command_display_contents,width=len(self.command_display_contents.get()),state=tk.DISABLED,disabledforeground='black')
+        self.command_display_button.pack(side=tk.TOP,fill=tk.X,anchor=tk.N)
         self.button_frame = tk.Frame(self.master)
-        self.button_frame.pack(side=tk.TOP,fill=tk.BOTH,expand=tk.YES)
+        self.button_frame.pack(side=tk.TOP,fill=tk.X)
+        self.test = tk.Frame(self.button_frame)
+        self.test.pack(side=tk.LEFT,fill=tk.X,anchor=tk.N)
         # Putting the 'search label' and input box into the search frame
         self.search_label = object()
         self.search_label.button = tk.Button(self.search_frame,text='Search',state=tk.DISABLED,disabledforeground='black')
-        self.search_label.button.pack(side=tk.LEFT,fill=tk.BOTH,anchor=tk.N)
+        self.search_label.button.pack(side=tk.LEFT,fill=tk.X,anchor=tk.N)
         self.search_entry = object()
         self.search_entry.input = tk.StringVar()  # Variable to keep the contents of the search
         self.search_entry.colour = tk.StringVar()
@@ -303,16 +306,19 @@ class GUI2:
         self.search_entry.button.focus_set()
         # The binding on the line below triggers the search event on each key press
         self.search_entry.button.bind("<KeyRelease>", self.search)     
-        self.search_entry.button.pack(side=tk.LEFT,fill=tk.BOTH,expand=tk.YES,anchor=tk.N)
+        self.search_entry.button.pack(side=tk.LEFT,fill=tk.X,anchor=tk.N)
 
         # Display buttons for current position
         self.display_buttons([])
 
     def display_command(self,button,true_or_false,event):
         ''' when the mouse hovers over a command, this function displays the actual command underneath
-        in the command_display_buttons'''
+        in the command_display_buttons.  If it is a submenu, the position is displayed.'''
+        # For some reason, in unix, when the mouse hovers over the button, it loses it's colour.
+        if button.type == 'command': text = button.actual_command
+        else: text = str(button.position)
         if true_or_false == True:
-            self.command_display_contents.set(button.actual_command)
+            self.command_display_contents.set(text)
         else:
             self.command_display_contents.set('')
         # Don't seem to need to call 'configure' to get this to update
@@ -393,7 +399,7 @@ class GUI2:
             if button.executed.get() == 'yes':
                 button.executed.set('')
                 button.reset()
-            button.button.configure(bg=button.colour.get(),relief=button.relief)
+            button.button.configure(bg=button.colour.get(),activebackground=button.colour.get(),relief=button.relief)
 
         return
     
@@ -408,6 +414,8 @@ class GUI2:
             # effectively loading the menu for the first time.
             # I set the base position and clear the menu.search_dict
             self.menu.position = []
+            colour_var.set(self.colour_scheme['not-selected'])
+            self.search_entry.button.configure(bg=colour_var.get())
             self.display_buttons(self.menu.position)
         else:
             if event.char != '' or event.keysym == 'BackSpace':
@@ -433,7 +441,26 @@ class GUI2:
                     for frame in self.button_frames.keys()[:]:
                         self.button_frames[frame].pack_forget()
                         del(self.button_frames[frame])
-                    # Now I create a special 'search' frame
+                    
+                    # Initially, when you've only pressed one character, the search function can return a LOT
+                    # of values.  There is an annoying bug in unix where the frame doesn't resize down after you've
+                    # displayed more than 70 buttons in it, but also it's unpractical, of course, because you can't
+                    # fit 70 buttons on a screen at once anyway.  I should batch them up alongside each other in sets of 20.
+                    batch_size = 20
+                    button_list = []
+                    for menu_level, options in options_dict.items():
+                        for option in options:
+                            button_list.append((menu_level,option))
+                    
+                    list_of_batches = [ button_list[i:i+batch_size] for i in range(0,len(button_list),batch_size) ]
+                    
+                    for batch in list_of_batches:
+                        self.button_frames[tuple(batch)] = tk.Frame(self.button_frame)
+                        self.button_frames[tuple(batch)].pack(side=tk.LEFT,anchor=tk.N)
+                        for (menu_level, option) in batch:
+                            button = Button(self.button_frames[tuple(batch)],list(menu_level) + [option],self)
+                            button.pack()
+                    '''
                     self.button_frames['search'] = tk.Frame(self.button_frame)
                     self.button_frames['search'].pack(side=tk.LEFT,anchor=tk.N)
 
@@ -442,7 +469,7 @@ class GUI2:
                         for option in options:
                             button = Button(self.button_frames['search'],list(menu_level) + [option],self)
                             button.pack()
-
+                    '''
         return
 
     def button_press(self,button):
@@ -452,6 +479,12 @@ class GUI2:
         if button.type == 'command' and button.colour.get() == button.colour_when_pressed:
             self.menu.execute_command(button.actual_command)
             button.executed.set('yes')
+            # Below is a bit of a silly bit of code to make the button flash.  ooohhh!
+            button.colour.set(self.colour_scheme['command-initial'])
+            button.button.configure(activebackground=button.colour.get())
+            button.button.flash()
+            button.button.flash()
+            
 
         self.display_buttons(self.menu.position)
         return
@@ -464,7 +497,7 @@ class object:
 def run_gui_menu(menu):
     root = tk.Tk()
     root.title('Menu')
-    GUI2(root,menu)
+    GUI(root,menu)
     root.mainloop()
     return
 
@@ -493,3 +526,4 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         sys.exit('Quitting')
+
