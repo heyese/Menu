@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-import sys, Tkinter as tk, re, csv, optparse, signal, commands
+import sys, Tkinter as tk, re, csv, optparse, signal, commands, subprocess, getpass
 from optparse import OptionParser
 from functools import partial
 from ConfigParser import SafeConfigParser
@@ -18,9 +18,10 @@ def parse_args(options):
                         help="Default: menu.cfg", default='menu.cfg')
     parser.add_option("-f", "--functions", metavar="FILE", dest="functions", 
                         help="Default: functions.py", default='menu.functions')
-    parser.add_option("-g", "--gui", dest="gui", default=True, 
-                        action="store_true",help="GUI mode. Default: True")                    
+    parser.add_option("-t", "--text", dest="text", default=False, 
+                        action="store_true",help="text mode. Default: False")                    
     (options, args) = parser.parse_args()
+
     return (options,args)
 
 def parse_config(config):
@@ -141,18 +142,33 @@ either the key or the value or, if value is a 'command', the 'actual-command' ly
             return 'command'
         else: return 'sub-menu'
     
-    def execute_command(self,command):
-        '''Execute's the given command in the shell.  Not currently working in Git Bash, but yet to test on an actual Unix box'''
-        print "Executing following command: %s" % command
-        '''
-        (status, output) = commands.getstatusoutput(command)
-        if status:    ## Error case, print the command's output to stderr and exit
-            print "Non-zero exit status - see below for output:"
-            sys.stderr.write(output)
-            sys.exit('Exiting')
-        print "Command run successfully - output below"
-        print output
-        '''
+    def execute_command(self,text):
+        '''Executes the given command in the shell.  Not currently working in Git Bash, but yet to test on an actual Unix box'''
+        # two possibilities.  Simple function, in which case execute as the current user.
+        # (user;command) - in which case execute the command as the user.
+        match = re.search(r'^\(([^;]+);(.*)\)',text)
+        if match:
+            # User has been specified
+            (user,command) = (match.group(1),match.group(2))
+        else:
+            # No user has been specified
+            (user,command) = (text,getpass.getuser())
+            
+        process = subprocess.Popen(
+                    "sudo su - %s" % user,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    shell=True)
+    
+        (stdout_value,stderr_value) = process.communicate(command)
+        returncode = process.pid
+                    
+        print "stdout: \n%s" % stdout_value
+        print "stderr: \n%s" % stderr_value
+        print "returncode: %s" % returncode
+        print "\n\n------------------------------------------\n\n"
+
         return
         
         
@@ -514,10 +530,10 @@ def main():
     menu = Menu(menu_dict)
     
     # Run the menu GUI if user so wishes ...
-    if options.gui == True: run_gui_menu(menu)
+    if options.text == False: run_gui_menu(menu)
     
     # ... else run the text based menu.
-    if options.gui == False: run_text_menu(menu)
+    if options.text == True: run_text_menu(menu)
     
     return
 
@@ -526,4 +542,3 @@ if __name__ == "__main__":
         main()
     except KeyboardInterrupt:
         sys.exit('Quitting')
-
